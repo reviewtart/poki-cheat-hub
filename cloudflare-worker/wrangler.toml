@@ -1,0 +1,10 @@
+name = "poki-proxy"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Free .workers.dev subdomain by default. If you have a custom domain on
+# Cloudflare, uncomment + edit the routes block below.
+#
+# routes = [
+#   { pattern = "poki-proxy.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]

@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Poki Cheat Hub — Console snippets & bookmarklets for Poki games</title>
+  <meta name="description" content="One-click cheats for Poki games. Skip ads, infinite coins, god mode. Console snippets and bookmarklets generated client-side. No accounts." />
+
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <a href="#games" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <span class="bracket">[</span><span class="brand-text">POKI<span class="brand-dot">::</span>CHEAT</span><span class="bracket">]</span>
+      </div>
+      <p class="brand-tag">client-side cheat generator · v0.1</p>
+    </div>
+    <nav class="top-nav" aria-label="Primary">
+      <a href="#universal">Universal</a>
+      <a href="#games">Games</a>
+      <a href="#how">How to use</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/" class="nav-cta" id="ghLink" target="_blank" rel="noopener">GitHub →</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="heroTitle">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">// research toolkit · not affiliated with Poki</p>
+          <h1 id="heroTitle">
+            Cheat almost <span class="accent">any Poki game</span> with a single line of JavaScript.
+          </h1>
+          <p class="lede">
+            Hand-curated cheat snippets that target Poki's game frame globals: <code>window.game</code>,
+            <code>PokiSDK</code>, and the engine objects exposed by their HTML5 ports.
+            Generated entirely in your browser — nothing uploads, nothing tracks.
+          </p>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="#universal">Skip all Poki ads ↓</a>
+            <a class="btn btn-ghost" href="#how">How does it work?</a>
+          </div>
+          <ul class="hero-meta">
+            <li><strong>0</strong> external scripts</li>
+            <li><strong>0</strong> tracking</li>
+            <li><strong>Pure</strong> static HTML</li>
+          </ul>
+        </div>
+
+        <aside class="hero-terminal" aria-hidden="true">
+          <div class="term-bar">
+            <span class="dot red"></span><span class="dot yel"></span><span class="dot grn"></span>
+            <span class="term-title">devtools · games.poki.com</span>
+          </div>
+          <pre class="term-body"><code><span class="c-c">// open the game's iframe in DevTools, then:</span>
+<span class="c-k">const</span> sdk = <span class="c-v">window</span>.<span class="c-p">PokiSDK</span>;
+sdk.commercialBreak = () =&gt; <span class="c-v">Promise</span>.resolve();
+sdk.rewardedBreak  = () =&gt; <span class="c-v">Promise</span>.resolve(<span class="c-k">true</span>);
+sdk.displayAd      = () =&gt; <span class="c-k">false</span>;
+
+<span class="c-c">// then your game-specific cheat, e.g.</span>
+game.freeRevivals = <span class="c-n">999</span>;
+game.hero.speed   = <span class="c-n">2</span>;</code></pre>
+        </aside>
+      </div>
+    </section>
+
+    <section id="universal" class="universal" aria-labelledby="uniTitle">
+      <div class="section-head">
+        <h2 id="uniTitle">Universal Poki snippets</h2>
+        <p>These work on every Poki game because every game embeds the same <code>PokiSDK</code> bridge.</p>
+      </div>
+
+      <div class="snippet-grid" id="universalGrid"></div>
+    </section>
+
+    <section id="games" class="games" aria-labelledby="gamesTitle">
+      <div class="section-head">
+        <h2 id="gamesTitle">Per-game cheats</h2>
+        <p>Game-specific hooks built from inspecting each title's exposed window globals.</p>
+        <div class="games-controls">
+          <label class="search">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="gameSearch" type="search" placeholder="search games…" aria-label="Search games" />
+          </label>
+          <div class="tag-row" role="tablist" id="tagRow"></div>
+        </div>
+      </div>
+
+      <div id="gameGrid" class="game-grid"></div>
+      <p id="noResults" class="no-results" hidden>No matching games. Submit a request on GitHub.</p>
+    </section>
+
+    <section id="builder" class="builder" aria-labelledby="builderTitle">
+      <div class="section-head">
+        <h2 id="builderTitle">Custom cheat builder</h2>
+        <p>Mix-and-match toggles. We assemble the JavaScript live.</p>
+      </div>
+
+      <div class="builder-grid">
+        <form class="builder-form" id="builderForm">
+          <fieldset>
+            <legend>Ads</legend>
+            <label><input type="checkbox" data-key="skipCommercial" checked /> Skip commercial breaks</label>
+            <label><input type="checkbox" data-key="skipRewarded" checked /> Auto-grant rewarded ads</label>
+            <label><input type="checkbox" data-key="killDisplayAds" /> Remove DOM display ads</label>
+            <label><input type="checkbox" data-key="blockAdNetworks" /> Block ad-network requests (fetch/XHR hook)</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Game state</legend>
+            <label><input type="checkbox" data-key="infRevivals" /> Infinite revivals (Subway Surfers-style)</label>
+            <label><input type="checkbox" data-key="speedMul" /> Set speed multiplier
+              <input type="number" data-input="speedMulVal" min="0.1" max="5" step="0.1" value="1" />
+            </label>
+            <label><input type="checkbox" data-key="addCoins" /> Top-up coins on the live <code>stats</code> object
+              <input type="number" data-input="addCoinsVal" min="1" max="999999" step="100" value="9999" />
+            </label>
+            <label><input type="checkbox" data-key="exposeGame" checked /> Expose globals as <code>__POKI</code>
+              for easier manual tweaking
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Persistence</legend>
+            <label><input type="checkbox" data-key="reapplyOnLoad" checked /> Re-apply on every page reload (uses MutationObserver)</label>
+            <label><input type="checkbox" data-key="silent" /> Silent mode (no console banner)</label>
+          </fieldset>
+        </form>
+
+        <div class="builder-output">
+          <div class="tabs" role="tablist">
+            <button class="tab active" role="tab" aria-selected="true" data-tab="console">Console</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="bookmark">Bookmarklet</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="userscript">Userscript</button>
+          </div>
+          <pre class="output-pre"><code id="builderOutput"></code></pre>
+          <div class="output-actions">
+            <button class="btn btn-primary" id="copyBtn">Copy</button>
+            <a class="btn btn-ghost" id="dragBookmark" href="#" hidden>↗ drag this to your bookmarks bar</a>
+            <button class="btn btn-ghost" id="downloadBtn">Download .user.js</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" class="how" aria-labelledby="howTitle">
+      <div class="section-head">
+        <h2 id="howTitle">How to use</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <h3>1 · Open the game on poki.com</h3>
+          <p>Wait until you can press play. The game frame loads on a subdomain like
+            <code>5dd312fa-...gdn.poki.com</code> — that's where the engine lives.</p>
+        </li>
+        <li>
+          <h3>2 · Open DevTools → switch context</h3>
+          <p>Press <kbd>F12</kbd> (or <kbd>⌘⌥I</kbd>). In the Console's context dropdown, pick the
+            game frame (it ends with <code>gdn.poki.com</code>). This is the cross-origin frame —
+            your console must be <em>inside</em> it.</p>
+        </li>
+        <li>
+          <h3>3 · Paste the snippet</h3>
+          <p>Hit a "Copy" button on this page, paste into the console, press Enter. Done.</p>
+        </li>
+        <li>
+          <h3>3a · Or use the bookmarklet</h3>
+          <p>If you generated a bookmarklet, drag it to your bookmarks bar. Click it while the game
+            tab is focused. Note: it must be invoked while the <em>game frame</em> is the active one —
+            for many games that means clicking the canvas first.</p>
+        </li>
+        <li>
+          <h3>3b · Or use the Tampermonkey userscript</h3>
+          <p>Install <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a>,
+            create a new script, paste the generated content. It auto-runs every time you load a Poki game.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="faq" class="faq" aria-labelledby="faqTitle">
+      <div class="section-head">
+        <h2 id="faqTitle">FAQ</h2>
+      </div>
+      <details>
+        <summary>Why can't I just iframe Poki here and inject cheats?</summary>
+        <p><code>poki.com</code> uses a <code>frame-ancestors</code> CSP that blocks everything except
+          <code>*.poki.io</code> and localhost. The actual game subdomain
+          (<code>*.gdn.poki.com</code>) sends <code>X-Frame-Options: SAMEORIGIN</code>. So a hosted
+          site can't legally frame the game. The bookmarklet / console / userscript flow runs in
+          your own browser, in the game's own context, where same-origin rules don't get in the way.</p>
+      </details>
+      <details>
+        <summary>Is this against Poki's TOS?</summary>
+        <p>Modifying client-side JavaScript of a game running in your own browser is what game
+          modding has always been. Poki's leaderboards are server-validated for many games — so
+          submitting fake scores usually fails server-side. Use it for fun in offline play.
+          Don't expect cheated scores to land on the global high-score table.</p>
+      </details>
+      <details>
+        <summary>Will Poki detect and ban me?</summary>
+        <p>Poki does not have user accounts you can be banned from for most games. The SDK
+          collects analytics events; overriding them locally is a client choice. Don't run
+          aggressive ad-blocking on revenue-sensitive accounts (creators).</p>
+      </details>
+      <details>
+        <summary>Does this work on mobile?</summary>
+        <p>Mobile browsers don't expose DevTools the same way. You can sometimes use Eruda or
+          a remote-debug bridge. Bookmarklets work on iOS Safari and Chrome desktop.</p>
+      </details>
+      <details>
+        <summary>How are new games added?</summary>
+        <p>The hooks live in <code>js/cheats/*.js</code> as plain ES modules. Each one exports
+          metadata plus snippet generators. Pull requests welcome — see the README in the repo.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      Built for research and curiosity. Not affiliated with or endorsed by Poki BV.
+      Game trademarks belong to their respective owners.
+    </p>
+    <p class="footer-meta">
+      <a href="#" id="updatedStamp">updated…</a>
+      ·
+      <a href="https://github.com/" target="_blank" rel="noopener">repo</a>
+    </p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
