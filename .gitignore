@@ -5,3 +5,6 @@ node_modules/
 *.log
 .wrangler/
 dist/
+dont_push_secret.txt
+serect_dont_push.txt
+*.secret
