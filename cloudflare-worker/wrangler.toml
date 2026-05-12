@@ -1,6 +1,8 @@
 name = "poki-proxy"
 main = "worker.js"
 compatibility_date = "2026-01-01"
+account_id = "6e05e09612c0d0d68f6122f2805090f1"
+workers_dev = true
 
 # Free .workers.dev subdomain by default. If you have a custom domain on
 # Cloudflare, uncomment + edit the routes block below.

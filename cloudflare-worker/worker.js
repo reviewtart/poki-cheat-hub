@@ -1,40 +1,23 @@
-// Cloudflare Worker reverse-proxy for Poki.
-// USE AT YOUR OWN RISK — may violate Poki's TOS. Cloudflare may also block this
-// at scale (their free plan caps at 100k req/day, and Poki may IP-block your egress).
+// Cloudflare Worker — Poki reverse-proxy + cheat-hub static host.
 //
-// What this does:
-//  - Routes /poki/* to poki.com
-//  - Routes /games/* to games.poki.com
-//  - Routes /gdn/<id>/* to <id>.gdn.poki.com
-//  - Strips X-Frame-Options and Content-Security-Policy on the proxied responses
-//  - Rewrites HTML/JS URLs that reference poki.com|games.poki.com|*.gdn.poki.com
-//    so they go through this Worker (preserves same-origin).
+// Routes:
+//   GET /_health                              → ok
+//   GET /, /index.html, /css/*, /js/*,
+//       /assets/*, /README.md, /LICENSE       → static cheat-hub (from GitHub raw)
+//   GET /_games/*                             → games.poki.com/*
+//   GET /_cdn/*                               → game-cdn.poki.com/*
+//   GET /_acdn/*                              → a.poki-cdn.com/*
+//   GET /_gdn/<id>/*                          → <id>.gdn.poki.com/*
+//   GET /<anything else>                      → poki.com/<anything else>
 //
-// Deploy:
-//   npm i -g wrangler
-//   wrangler login
-//   wrangler deploy
-//
-// wrangler.toml (sibling file):
-//   name = "poki-proxy"
-//   main = "worker.js"
-//   compatibility_date = "2026-01-01"
-//   routes = [{ pattern = "poki-proxy.yourdomain.workers.dev/*", zone_name = "..." }]
+// HTML/JS/CSS/JSON bodies have URLs rewritten so all Poki domains map to the
+// worker's own origin → game iframe runs same-origin with the parent site.
 
-const UPSTREAM_HOSTS = new Map([
-  ['poki', 'poki.com'],
-  ['games', 'games.poki.com'],
-  ['cdn', 'game-cdn.poki.com'],
-  ['acdn', 'a.poki-cdn.com'],
-]);
-const GDN_PREFIX = '/gdn/';   // /gdn/<id>/<path>
-
-const HOP_BY_HOP_HEADERS = new Set([
+const HOP_BY_HOP = new Set([
   'connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer',
   'upgrade', 'proxy-authenticate', 'proxy-authorization',
 ]);
-
-const STRIP_RESPONSE_HEADERS = new Set([
+const STRIP_RESP_HEADERS = new Set([
   'x-frame-options',
   'content-security-policy',
   'content-security-policy-report-only',
@@ -43,45 +26,123 @@ const STRIP_RESPONSE_HEADERS = new Set([
   'cross-origin-resource-policy',
 ]);
 
+const STATIC_ORIGIN = 'https://raw.githubusercontent.com/reviewtart/poki-cheat-hub/main';
+const STATIC_PATHS = new Set([
+  '/', '/index.html',
+  '/README.md', '/LICENSE',
+  '/css/style.css',
+  '/js/app.js', '/js/play.js', '/js/generator.js',
+  '/js/cheats/games.js', '/js/cheats/universal.js',
+]);
+function isStaticPath(p) {
+  if (STATIC_PATHS.has(p)) return true;
+  if (p.startsWith('/js/') || p.startsWith('/css/') || p.startsWith('/assets/')) return true;
+  return false;
+}
+function staticContentType(p) {
+  if (p.endsWith('.html') || p === '/') return 'text/html; charset=utf-8';
+  if (p.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (p.endsWith('.js') || p.endsWith('.mjs')) return 'application/javascript; charset=utf-8';
+  if (p.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (p.endsWith('.md')) return 'text/plain; charset=utf-8';
+  if (p.endsWith('.svg')) return 'image/svg+xml';
+  if (p.endsWith('.png')) return 'image/png';
+  return 'application/octet-stream';
+}
+async function serveStatic(pathname) {
+  const remote = pathname === '/' ? '/index.html' : pathname;
+  const resp = await fetch(STATIC_ORIGIN + remote, {
+    cf: { cacheTtl: 60, cacheEverything: true },
+  });
+  if (!resp.ok) return new Response('not found', { status: 404 });
+  return new Response(resp.body, {
+    status: 200,
+    headers: {
+      'content-type': staticContentType(pathname),
+      'cache-control': 'public, max-age=60',
+      'access-control-allow-origin': '*',
+    },
+  });
+}
+
+function pickUpstream(pathname) {
+  // Returns { url, kind } where url is upstream absolute URL.
+  if (pathname.startsWith('/_games/')) {
+    return { url: 'https://games.poki.com' + pathname.slice('/_games'.length), kind: 'games' };
+  }
+  if (pathname.startsWith('/_cdn/')) {
+    return { url: 'https://game-cdn.poki.com' + pathname.slice('/_cdn'.length), kind: 'cdn' };
+  }
+  if (pathname.startsWith('/_acdn/')) {
+    return { url: 'https://a.poki-cdn.com' + pathname.slice('/_acdn'.length), kind: 'acdn' };
+  }
+  if (pathname.startsWith('/_gdn/')) {
+    // /_gdn/<id>/<rest>
+    const rest = pathname.slice('/_gdn/'.length);
+    const slash = rest.indexOf('/');
+    const id = slash === -1 ? rest : rest.slice(0, slash);
+    const after = slash === -1 ? '/' : rest.slice(slash);
+    return { url: `https://${id}.gdn.poki.com${after}`, kind: 'gdn' };
+  }
+  // Default: poki.com
+  return { url: 'https://poki.com' + pathname, kind: 'poki' };
+}
+
+function rewriteUrlAbsolute(absoluteUrl, proxyOrigin) {
+  try {
+    const u = new URL(absoluteUrl, 'https://poki.com');
+    if (u.hostname === 'poki.com' || u.hostname === 'www.poki.com')
+      return `${proxyOrigin}${u.pathname}${u.search}${u.hash}`;
+    if (u.hostname === 'games.poki.com')
+      return `${proxyOrigin}/_games${u.pathname}${u.search}${u.hash}`;
+    if (u.hostname === 'game-cdn.poki.com')
+      return `${proxyOrigin}/_cdn${u.pathname}${u.search}${u.hash}`;
+    if (u.hostname === 'a.poki-cdn.com')
+      return `${proxyOrigin}/_acdn${u.pathname}${u.search}${u.hash}`;
+    const gdn = /^([^.]+)\.gdn\.poki\.com$/.exec(u.hostname);
+    if (gdn) return `${proxyOrigin}/_gdn/${gdn[1]}${u.pathname}${u.search}${u.hash}`;
+    return absoluteUrl;
+  } catch {
+    return absoluteUrl;
+  }
+}
+
+function rewriteBody(body, proxyOrigin) {
+  return body
+    .replace(/https?:\/\/(?:www\.)?poki\.com/g, proxyOrigin)
+    .replace(/https?:\/\/games\.poki\.com/g, `${proxyOrigin}/_games`)
+    .replace(/https?:\/\/game-cdn\.poki\.com/g, `${proxyOrigin}/_cdn`)
+    .replace(/https?:\/\/a\.poki-cdn\.com/g, `${proxyOrigin}/_acdn`)
+    .replace(/https?:\/\/([a-z0-9-]+)\.gdn\.poki\.com/g, `${proxyOrigin}/_gdn/$1`);
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
     const { pathname } = url;
 
-    // Healthcheck
-    if (pathname === '/' || pathname === '/_health') {
+    if (pathname === '/_health') {
       return new Response('poki-proxy ok', { headers: { 'content-type': 'text/plain' } });
     }
-
-    // Determine upstream
-    let upstreamUrl;
-    if (pathname.startsWith(GDN_PREFIX)) {
-      // /gdn/<id>/<rest>
-      const rest = pathname.slice(GDN_PREFIX.length);
-      const slash = rest.indexOf('/');
-      if (slash === -1) return new Response('bad gdn path', { status: 400 });
-      const id = rest.slice(0, slash);
-      const after = rest.slice(slash);
-      upstreamUrl = `https://${id}.gdn.poki.com${after}${url.search}`;
-    } else {
-      const [, prefix, ...rest] = pathname.split('/');
-      const host = UPSTREAM_HOSTS.get(prefix);
-      if (!host) return new Response('unknown route', { status: 404 });
-      upstreamUrl = `https://${host}/${rest.join('/')}${url.search}`;
+    if (isStaticPath(pathname)) {
+      return serveStatic(pathname);
     }
+
+    const { url: upstreamUrl } = pickUpstream(pathname);
 
     // Build upstream request
     const upstreamHeaders = new Headers();
     for (const [k, v] of request.headers) {
-      if (HOP_BY_HOP_HEADERS.has(k.toLowerCase())) continue;
-      if (k.toLowerCase() === 'host') continue;
+      const kl = k.toLowerCase();
+      if (HOP_BY_HOP.has(kl)) continue;
+      if (kl === 'host') continue;
+      if (kl === 'cf-connecting-ip' || kl === 'cf-ray' || kl === 'cf-visitor') continue;
       upstreamHeaders.set(k, v);
     }
-    // Pretend referer comes from poki.com
     upstreamHeaders.set('referer', 'https://poki.com/');
     upstreamHeaders.set('origin', 'https://poki.com');
 
-    const upstreamReq = new Request(upstreamUrl, {
+    const upstreamReq = new Request(upstreamUrl + url.search, {
       method: request.method,
       headers: upstreamHeaders,
       body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
@@ -95,11 +156,11 @@ export default {
       return new Response('upstream error: ' + e.message, { status: 502 });
     }
 
-    // Follow redirects manually, rewriting Location
+    // Manual redirect rewriting
     if ([301, 302, 303, 307, 308].includes(upstreamResp.status)) {
       const loc = upstreamResp.headers.get('location');
       if (loc) {
-        const rewritten = rewriteUrlToProxy(loc, url.origin);
+        const rewritten = rewriteUrlAbsolute(loc, url.origin);
         return new Response(null, {
           status: upstreamResp.status,
           headers: { location: rewritten },
@@ -107,10 +168,9 @@ export default {
       }
     }
 
-    // Strip dangerous headers
     const respHeaders = new Headers(upstreamResp.headers);
     for (const k of [...respHeaders.keys()]) {
-      if (STRIP_RESPONSE_HEADERS.has(k.toLowerCase())) respHeaders.delete(k);
+      if (STRIP_RESP_HEADERS.has(k.toLowerCase())) respHeaders.delete(k);
     }
     respHeaders.set('access-control-allow-origin', '*');
 
@@ -132,32 +192,3 @@ export default {
     });
   },
 };
-
-function rewriteUrlToProxy(absoluteUrl, proxyOrigin) {
-  try {
-    const u = new URL(absoluteUrl, 'https://poki.com');
-    if (u.hostname === 'poki.com' || u.hostname === 'www.poki.com')
-      return `${proxyOrigin}/poki${u.pathname}${u.search}`;
-    if (u.hostname === 'games.poki.com')
-      return `${proxyOrigin}/games${u.pathname}${u.search}`;
-    if (u.hostname === 'game-cdn.poki.com')
-      return `${proxyOrigin}/cdn${u.pathname}${u.search}`;
-    if (u.hostname === 'a.poki-cdn.com')
-      return `${proxyOrigin}/acdn${u.pathname}${u.search}`;
-    const gdn = /^([^.]+)\.gdn\.poki\.com$/.exec(u.hostname);
-    if (gdn) return `${proxyOrigin}/gdn/${gdn[1]}${u.pathname}${u.search}`;
-    return absoluteUrl;
-  } catch {
-    return absoluteUrl;
-  }
-}
-
-function rewriteBody(body, proxyOrigin) {
-  return body
-    .replace(/https:\/\/poki\.com/g, `${proxyOrigin}/poki`)
-    .replace(/https:\/\/www\.poki\.com/g, `${proxyOrigin}/poki`)
-    .replace(/https:\/\/games\.poki\.com/g, `${proxyOrigin}/games`)
-    .replace(/https:\/\/game-cdn\.poki\.com/g, `${proxyOrigin}/cdn`)
-    .replace(/https:\/\/a\.poki-cdn\.com/g, `${proxyOrigin}/acdn`)
-    .replace(/https:\/\/([a-z0-9-]+)\.gdn\.poki\.com/g, `${proxyOrigin}/gdn/$1`);
-}
