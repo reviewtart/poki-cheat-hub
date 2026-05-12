@@ -337,6 +337,32 @@ export default {
       });
     }
 
+    // /play/<id> — proxy a freebuisness/html mirrored game with proper
+    // content-type so the browser renders it. The upstream serves text/plain
+    // (because of GitHub's nosniff), which makes the browser show source.
+    if (pathname.startsWith('/play/')) {
+      const id = pathname.slice('/play/'.length).replace(/\.html$/, '');
+      // Use raw.githubusercontent.com directly — jsdelivr causes worker fetch
+      // redirect loops because both are on Cloudflare.
+      const upstream = `https://raw.githubusercontent.com/freebuisness/html/main/${id}.html`;
+      try {
+        const r = await fetch(upstream, { cf: { cacheTtl: 300, cacheEverything: true } });
+        if (!r.ok) return new Response('game not found: ' + id, { status: r.status });
+        let text = await r.text();
+        text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}`);
+        return new Response(text, {
+          status: 200,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'access-control-allow-origin': '*',
+            'cache-control': 'public, max-age=300',
+          },
+        });
+      } catch (e) {
+        return new Response('upstream err: ' + e.message, { status: 502 });
+      }
+    }
+
     const { url: upstreamUrl } = pickUpstream(pathname);
 
     // Build upstream request
@@ -360,7 +386,12 @@ export default {
 
     let upstreamResp;
     try {
-      upstreamResp = await fetch(upstreamReq);
+      // Short cache TTL — upstream sends max-age=31536000 but we need our
+      // header strips and body rewrites to take effect quickly.
+      // cacheEverything: true forces our TTL over upstream's cache-control.
+      upstreamResp = await fetch(upstreamReq, {
+        cf: { cacheTtl: 30, cacheEverything: true, cacheKey: `v2-${upstreamUrl}` },
+      });
     } catch (e) {
       return new Response('upstream error: ' + e.message, { status: 502 });
     }
