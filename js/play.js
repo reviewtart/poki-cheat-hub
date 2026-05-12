@@ -28,7 +28,16 @@ function readProxy() {
 }
 
 function gameUrlFor(slug) {
-  if (state.proxyBase) return `${state.proxyBase}/en/g/${slug}`;
+  const game = games.find(g => g.slug === slug);
+  if (state.proxyBase) {
+    // If we know the gdn id/build, load the game DIRECTLY without Poki's
+    // React page chrome. That avoids the "Poki React never renders game iframe"
+    // failure mode.
+    if (game?.gdnId && game?.gdnBuild) {
+      return `${state.proxyBase}/_gdn/${game.gdnId}/${game.gdnBuild}/index.html`;
+    }
+    return `${state.proxyBase}/en/g/${slug}`;
+  }
   return `https://poki.com/en/g/${slug}`;
 }
 
