@@ -8,10 +8,12 @@ export const games = [
     slug: 'combat-reloaded',
     name: 'Combat Reloaded',
     publisher: 'NadGames',
-    engine: 'Unity WebGL',
-    detect: () => typeof window.unityInstance === 'object' || typeof window.Module === 'object',
-    tags: ['fps', '3d', 'unity'],
-    features: ['Skip Poki ad breaks', 'Probe Unity heap', 'Send Unity messages'],
+    engine: 'PlayCanvas',
+    gdnId: '5dd2ca37-015f-11ea-ad56-9cb6d0d995f7',
+    gdnBuild: 'eddcfc60-caff-402b-9558-d1075b79ecad',
+    detect: () => typeof window.pc === 'object',
+    tags: ['fps', '3d', 'playcanvas'],
+    features: ['Skip Poki ad breaks', 'Direct-gdn iframe play', 'Probe PlayCanvas app'],
     snippets: [
       {
         id: 'cr-find',
@@ -46,10 +48,12 @@ export const games = [
   {
     slug: 'crazy-cars',
     name: 'Crazy Cars',
-    publisher: 'Goog Tech Studios',
-    engine: 'HTML5 / Custom',
-    detect: () => true,
-    tags: ['racing', '3d'],
+    publisher: 'No Pressure Studio',
+    engine: 'PlayCanvas',
+    gdnId: 'c55cb8ba-16ce-4e15-b3c7-aa1824c48035',
+    gdnBuild: '976584cb-4d27-480d-a73a-2cf235ec6e31',
+    detect: () => typeof window.pc === 'object',
+    tags: ['racing', '3d', 'playcanvas'],
     features: ['Skip ads', 'Expose internals', 'Slow-motion engine'],
     snippets: [
       {
@@ -202,9 +206,11 @@ export const games = [
     slug: 'brain-test-tricky-puzzles',
     name: 'Brain Test: Tricky Puzzles',
     publisher: 'Unico Studio',
-    engine: 'Unity WebGL',
-    detect: () => typeof window.unityInstance === 'object' || typeof window.Module === 'object',
-    tags: ['puzzle', 'unity'],
+    engine: 'Custom HTML5',
+    gdnId: '0322484b-7a58-4454-9667-f805afffded5',
+    gdnBuild: '7279cc90-edc4-4854-8b66-b8911f746ebb',
+    detect: () => true,
+    tags: ['puzzle'],
     features: ['Skip ads', 'Solve revealed via SendMessage probe'],
     snippets: [
       {
@@ -225,8 +231,10 @@ export const games = [
   {
     slug: 'dinosaur-game',
     name: 'Dinosaur Game (Chrome Dino)',
-    publisher: 'Various / Poki',
+    publisher: 'Chrome UX / Poki',
     engine: 'HTML5 / Canvas',
+    gdnId: 'a4e4a244-d11b-4d94-b1d8-deb2dbbaff02',
+    gdnBuild: '09a3212c-2757-4232-93dc-c002f4ac007f',
     detect: () => typeof window.Runner === 'function',
     tags: ['runner', '2d'],
     features: ['Infinite jump', 'Slow motion', 'Score boost'],
