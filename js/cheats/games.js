@@ -268,16 +268,51 @@ export const games = [
     name: 'Subway Surfers',
     publisher: 'Sybo Games / Kiloo',
     engine: 'PixiJS + V3D',
-    proxyBlocked: 'Playable on poki.com directly — the Poki SDK checks parent origin and refuses to load through this proxy. Open poki.com/en/g/subway-surfers in another tab and paste the snippets in DevTools instead.',
+    proxyBlocked: 'Playable on poki.com directly — the Poki SDK checks parent origin and refuses to load through this proxy. Open poki.com/en/g/subway-surfers in another tab and paste the snippets in DevTools or use the bookmarklet.',
     alternativeUrl: 'https://poki.com/en/g/subway-surfers',
     detect: () => typeof window.game === 'object' && typeof window.game.freeRevivals !== 'undefined',
     tags: ['runner', '3d'],
-    features: ['Infinite revives', 'Custom speed', 'Pause physics'],
+    features: [
+      'Infinite revives + skip ad on revive',
+      'Add coins / keys / score multiplier',
+      'Slow motion / fast forward',
+      'Auto-collect (magnet always on)',
+      'Disable guard chaser',
+      'Skip ahead by distance',
+    ],
     snippets: [
+      {
+        id: 'ss-godmode',
+        title: '🛡️ God mode bundle (recommended)',
+        desc: 'Everything at once — infinite revives, 999k coins, 99 keys, 100x multiplier, magnet always on, no chaser. Run once per session.',
+        tags: ['runner', 'bundle'],
+        code: `(() => {
+  const g = window.game;
+  if (!g) return console.warn('[ss] no game — start the game first');
+  g.freeRevivals = 999;
+  g.paidRevivals = 999;
+  if (g.stats?.data) {
+    g.stats.data.coins += 999000;
+    g.stats.data.keys = 99;
+    g.stats.data.multiplier = 100;
+  }
+  if (g.hero?.magnet) g.hero.magnet.count = 999;
+  if (g.guard?.chaser) {
+    g.guard.chaser._distance = -9999;
+    g.guard.chaser.distanceStart = -9999;
+  }
+  // Skip ads
+  if (window.PokiSDK) {
+    PokiSDK.commercialBreak = () => Promise.resolve();
+    PokiSDK.rewardedBreak = () => Promise.resolve(true);
+  }
+  console.log('%c[ss] god mode active', 'color:#33ffaa;font-weight:bold');
+})();`,
+      },
       {
         id: 'ss-infinite-revives',
         title: 'Infinite revives',
-        desc: 'Sets free + paid revivals to 999.',
+        desc: 'Sets free + paid revivals to 999. No ad needed to revive.',
         tags: ['runner'],
         code: `(() => {
   if (!window.game) return console.warn('[ss] no game');
@@ -287,14 +322,153 @@ export const games = [
 })();`,
       },
       {
-        id: 'ss-speed',
-        title: 'Custom speed multiplier',
-        desc: 'Sets game.s — speed factor. Lower = slow mo.',
+        id: 'ss-add-coins',
+        title: 'Add 99,999 coins',
+        desc: 'Tops up game.stats.data.coins. Updates live HUD on next tick.',
+        tags: ['economy'],
+        code: `(() => {
+  const d = window.game?.stats?.data;
+  if (!d) return console.warn('[ss] stats.data not ready');
+  d.coins += 99999;
+  console.log('[ss] coins =', d.coins);
+})();`,
+      },
+      {
+        id: 'ss-add-keys',
+        title: 'Add 99 keys',
+        desc: 'Sets stats.data.keys = 99. Keys revive you on Gameover.',
+        tags: ['economy'],
+        code: `(() => {
+  const d = window.game?.stats?.data;
+  if (!d) return console.warn('[ss] stats.data not ready');
+  d.keys = 99;
+  console.log('[ss] keys = 99');
+})();`,
+      },
+      {
+        id: 'ss-multiplier',
+        title: 'Score multiplier x100',
+        desc: 'Sets stats.data.multiplier = 100. Multiplies score gained per coin/distance.',
+        tags: ['economy'],
+        code: `(() => {
+  const d = window.game?.stats?.data;
+  if (!d) return console.warn('[ss] stats.data not ready');
+  d.multiplier = 100;
+  console.log('[ss] multiplier = 100');
+})();`,
+      },
+      {
+        id: 'ss-magnet-forever',
+        title: 'Magnet always on',
+        desc: 'Sets hero.magnet.count = 999 so coins fly to you continuously.',
+        tags: ['powerup'],
+        code: `(() => {
+  const m = window.game?.hero?.magnet;
+  if (!m) return console.warn('[ss] no magnet');
+  m.count = 999;
+  m.frozen = false;
+  console.log('[ss] magnet engaged (count=999)');
+})();`,
+      },
+      {
+        id: 'ss-no-guard',
+        title: 'Disable guard chaser',
+        desc: 'Sends the inspector and his dog far behind. _distance = -9999.',
+        tags: ['runner'],
+        code: `(() => {
+  const c = window.game?.guard?.chaser;
+  if (!c) return console.warn('[ss] no guard chaser');
+  c._distance = -9999;
+  c.distanceStart = -9999;
+  console.log('[ss] guard chaser pushed back');
+})();`,
+      },
+      {
+        id: 'ss-slow-mo',
+        title: 'Slow motion (0.4x)',
+        desc: 'Halves the speed multiplier — easier to dodge. game.s = 0.4',
         tags: ['fun'],
         code: `(() => {
   if (!window.game) return;
-  window.game.s = 0.5;
-  console.log('[ss] speed = 0.5');
+  window.game.s = 0.4;
+  console.log('[ss] slow motion engaged (s=0.4)');
+})();`,
+      },
+      {
+        id: 'ss-fast-forward',
+        title: 'Fast forward (2x)',
+        desc: 'Doubles game speed — harder but rack up score fast.',
+        tags: ['fun'],
+        code: `(() => {
+  if (!window.game) return;
+  window.game.s = 2;
+  console.log('[ss] fast forward (s=2)');
+})();`,
+      },
+      {
+        id: 'ss-skip-distance',
+        title: 'Skip 5000 distance',
+        desc: 'Adds 5000 to stats.data.distance — equivalent to running ahead.',
+        tags: ['economy'],
+        code: `(() => {
+  const d = window.game?.stats?.data;
+  if (!d) return;
+  d.distance += 5000;
+  console.log('[ss] distance jumped to', d.distance);
+})();`,
+      },
+      {
+        id: 'ss-pause-toggle',
+        title: 'Toggle pause programmatically',
+        desc: 'Freeze the world without the pause UI — useful for screenshots.',
+        tags: ['debug'],
+        code: `(() => {
+  if (!window.game) return;
+  window.game.paused = !window.game.paused;
+  console.log('[ss] paused =', window.game.paused);
+})();`,
+      },
+      {
+        id: 'ss-no-tutorial',
+        title: 'Skip tutorial / intro',
+        desc: 'Force-completes tutorial and intro sequences.',
+        tags: ['qol'],
+        code: `(() => {
+  const g = window.game;
+  if (!g) return;
+  try { g.tutorial?.complete?.(); } catch (e) {}
+  try { g.intro?.skip?.(); } catch (e) {}
+  console.log('[ss] tutorial/intro skipped');
+})();`,
+      },
+      {
+        id: 'ss-watch-state',
+        title: 'Watch game state (live)',
+        desc: 'Logs hero position, coins, score, multiplier every second. Stop with clearInterval(__pokiWatch).',
+        tags: ['debug'],
+        code: `(() => {
+  if (window.__pokiWatch) clearInterval(window.__pokiWatch);
+  window.__pokiWatch = setInterval(() => {
+    const d = window.game?.stats?.data;
+    if (!d) return;
+    console.log('[ss]', { x: d.x?.toFixed(2), z: d.z?.toFixed(0), coins: d.coins, score: d.score, m: d.multiplier, distance: d.distance });
+  }, 1000);
+  console.log('[ss] watching — clearInterval(window.__pokiWatch) to stop');
+})();`,
+      },
+      {
+        id: 'ss-expose',
+        title: 'Expose internals on window.__POKI',
+        desc: 'Convenience handle: __POKI.game, __POKI.stats, __POKI.hero for tweaking from console.',
+        tags: ['debug'],
+        code: `(() => {
+  const g = window.game;
+  if (!g) return;
+  window.__POKI = {
+    game: g, stats: g.stats?.data, hero: g.hero, guard: g.guard,
+    sdk: window.PokiSDK, config: window.GAME_CONFIG,
+  };
+  console.log('[ss] window.__POKI ready:', window.__POKI);
 })();`,
       },
     ],
