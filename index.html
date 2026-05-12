@@ -73,44 +73,57 @@ game.hero.speed   = <span class="c-n">2</span>;</code></pre>
     </section>
 
     <section id="play" class="play" aria-labelledby="playTitle">
-      <div class="section-head">
-        <h2 id="playTitle">Play &amp; cheat</h2>
-        <p>Pick a game, hit a cheat button, the snippet runs in the embedded frame. Requires
-          same-origin: serve this site from <code>localhost:1234</code> / <code>8080</code> / <code>11001</code>
-          (Poki's CSP whitelist) <em>or</em> through the Cloudflare Worker proxy.</p>
-      </div>
-
-      <div class="play-grid">
-        <aside class="play-sidebar">
-          <label class="play-game-select">
-            <span>Game</span>
-            <select id="playGameSel"></select>
-          </label>
-          <div class="play-status" id="playStatus" data-mode="">
-            <span class="status-dot"></span>
-            <span class="status-text">detecting…</span>
-          </div>
-          <p class="play-hint">Click a button to run. If injection is blocked (cross-origin),
-            we copy the snippet and ask you to paste it in the game frame's DevTools console.</p>
-          <div class="play-buttons" id="playButtons"></div>
-          <button class="btn btn-primary" id="openMenuBtn" style="margin-top: 8px;">💎 Open cheat menu IN game</button>
-          <p class="play-hint" style="margin-top: 6px;">Inject a draggable cheat panel directly into the game iframe.
-            Works for library games (mirrored, same-origin). For Poki games you opened in a new tab,
-            use the bookmarklet from the Builder section instead.</p>
-          <details class="play-advanced">
-            <summary>Advanced</summary>
-            <button class="btn btn-ghost" id="reloadFrame">Reload game frame</button>
-            <button class="btn btn-ghost" id="popoutFrame">Open game in new tab</button>
-            <button class="btn btn-ghost" id="inspectFrame">Probe frame globals</button>
-          </details>
-        </aside>
-        <div class="play-frame-wrap">
-          <iframe id="playFrame" title="Poki game" allow="autoplay; fullscreen" allowfullscreen></iframe>
-          <div class="play-overlay" id="playOverlay" hidden>
-            <p class="overlay-msg" id="overlayMsg"></p>
+      <!-- View A: game grid (default) -->
+      <div id="gameGridView">
+        <div class="section-head">
+          <h2 id="playTitle">Play &amp; cheat</h2>
+          <p>550+ games, mirrored & stripped of anti-iframe protection. Click a card to play in our embed with a one-click cheat menu.</p>
+          <div class="games-controls">
+            <label class="search">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="libSearch" type="search" placeholder="search 558 games…" aria-label="Search games" />
+            </label>
+            <span class="play-count" id="playCount"></span>
           </div>
         </div>
+        <div id="libraryGrid" class="library-grid"></div>
       </div>
+
+      <!-- View B: single game page -->
+      <div id="gamePage" hidden>
+        <div class="game-page-bar">
+          <button class="btn btn-ghost" id="backToGrid">← Back to games</button>
+          <h2 class="gp-title" id="gpTitle"></h2>
+          <div class="gp-actions">
+            <button class="btn btn-ghost" id="gpReload">↻ Reload</button>
+            <button class="btn btn-ghost" id="gpFullscreen">⛶ Fullscreen</button>
+            <button class="btn btn-primary" id="gpInjectMenu">💎 Cheat menu</button>
+          </div>
+        </div>
+        <div class="gp-layout">
+          <div class="gp-frame-wrap">
+            <iframe id="playFrame" title="Game" allow="autoplay; fullscreen" allowfullscreen></iframe>
+            <div class="play-overlay" id="playOverlay" hidden>
+              <p class="overlay-msg" id="overlayMsg"></p>
+            </div>
+          </div>
+          <aside class="gp-side">
+            <div class="play-status" id="playStatus" data-mode="">
+              <span class="status-dot"></span>
+              <span class="status-text">detecting…</span>
+            </div>
+            <p class="gp-side-hint">One-click cheats. If the game is same-origin (library mirror), button runs directly inside it. Otherwise it copies the snippet for DevTools paste.</p>
+            <div class="play-buttons" id="playButtons"></div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- Hidden controls retained for play.js compatibility -->
+      <select id="playGameSel" hidden></select>
+      <button id="reloadFrame" hidden></button>
+      <button id="popoutFrame" hidden></button>
+      <button id="inspectFrame" hidden></button>
+      <button id="openMenuBtn" hidden></button>
     </section>
 
     <section id="universal" class="universal" aria-labelledby="uniTitle">
