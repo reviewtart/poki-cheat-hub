@@ -52,14 +52,14 @@ function staticContentType(p) {
 async function serveStatic(pathname) {
   const remote = pathname === '/' ? '/index.html' : pathname;
   const resp = await fetch(STATIC_ORIGIN + remote, {
-    cf: { cacheTtl: 60, cacheEverything: true },
+    cf: { cacheTtl: 5, cacheEverything: true },
   });
   if (!resp.ok) return new Response('not found', { status: 404 });
   return new Response(resp.body, {
     status: 200,
     headers: {
       'content-type': staticContentType(pathname),
-      'cache-control': 'public, max-age=60',
+      'cache-control': 'public, max-age=5, must-revalidate',
       'access-control-allow-origin': '*',
     },
   });
