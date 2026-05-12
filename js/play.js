@@ -4,6 +4,7 @@
 import { games as pokiGames } from './cheats/games.js';
 import { universal } from './cheats/universal.js';
 import { libraryGames } from './cheats/library-games.js';
+import { buildMenuPayload } from './cheats/in-game-menu.js';
 
 // Merge: library-games (551 mirrored, playable) + handcrafted poki entries (with cheats).
 // Hand-crafted entries take precedence when slug matches.
@@ -284,6 +285,22 @@ function bindAdvanced() {
   });
   $('#popoutFrame').addEventListener('click', () => {
     if (state.currentSlug) window.open(gameUrlFor(state.currentSlug), '_blank', 'noopener');
+  });
+  // In-game menu injector — only works for same-origin games (library mirror).
+  $('#openMenuBtn')?.addEventListener('click', () => {
+    const frame = $('#playFrame');
+    const mode = detectAccess(frame);
+    if (mode !== 'same-origin') {
+      showToast('Cross-origin — cannot inject menu');
+      return;
+    }
+    const game = games.find(g => g.slug === state.currentSlug);
+    try {
+      frame.contentWindow.eval(buildMenuPayload(game?.name || 'Game'));
+      showToast('Cheat menu opened inside game ⤴');
+    } catch (e) {
+      showToast('Inject err: ' + e.message);
+    }
   });
   $('#inspectFrame').addEventListener('click', () => {
     const frame = $('#playFrame');
