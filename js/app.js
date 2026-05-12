@@ -3,6 +3,7 @@
 import { universal } from './cheats/universal.js';
 import { games } from './cheats/games.js';
 import { buildConsoleSnippet, buildBookmarklet, buildUserscript } from './generator.js';
+import { bootPlay } from './play.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -329,6 +330,7 @@ function boot() {
   bindSearch();
   bindBuilder();
   renderBuilder();
+  bootPlay();
   setUpdatedStamp();
 }
 
