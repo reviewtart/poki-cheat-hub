@@ -91,7 +91,7 @@ function escape(s) {
 function renderGameSelect() {
   const sel = $('#playGameSel');
   sel.innerHTML = games.map(g =>
-    `<option value="${g.slug}">${escape(g.name)}${g.unavailable ? ' (unavailable)' : ''}</option>`
+    `<option value="${g.slug}">${escape(g.name)}${g.proxyBlocked || g.unavailable ? ' (proxy-blocked)' : ''}</option>`
   ).join('');
   sel.addEventListener('change', () => loadGame(sel.value));
 }
@@ -101,19 +101,20 @@ function showMovedBanner(game) {
   const msg = $('#overlayMsg');
   overlay.hidden = false;
   const altLink = game.alternativeUrl
-    ? `<a href="${game.alternativeUrl}" target="_blank" rel="noopener">${escape(game.alternativeUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`
+    ? `<a href="${game.alternativeUrl}" target="_blank" rel="noopener">Open ${escape(game.name)} on poki.com ↗</a>`
     : '';
   msg.innerHTML = `
-    <strong>${escape(game.name)}</strong> isn't available on Poki anymore.
-    <br>${escape(game.unavailable || 'Poki removed this title from their catalog.')}
-    ${altLink ? `<br><br>Play at the publisher: ${altLink}` : ''}
+    <strong>${escape(game.name)}</strong> — proxy mode blocked
+    <br>${escape(game.proxyBlocked || game.unavailable || 'SDK refuses to start through this proxy.')}
+    ${altLink ? `<br><br>${altLink}` : ''}
     <br><br>
-    Browser-level sitelock JS in the original build can't be bypassed from inside
-    the iframe — that's a hard browser guarantee, not a proxy bug.
+    <em style="color: var(--fg-dim); font-style: normal;">How to cheat anyway:</em><br>
+    1. Click the link above to open the game directly on poki.com<br>
+    2. Hit a "Copy snippet" button in the Universal / Games section<br>
+    3. In the game tab, open DevTools (F12), pick the <code>gdn.poki.com</code> frame<br>
+    4. Paste, Enter — cheats injected
     <br><br>
-    Snippets on the right still work if you can reach the game elsewhere.
-    <br><br>
-    <a href="https://poki.com/en/popular" target="_blank" rel="noopener">Browse currently playable Poki games →</a>
+    <a href="https://poki.com/en/popular" target="_blank" rel="noopener">Browse all Poki games →</a>
   `;
 }
 
@@ -235,11 +236,9 @@ function loadGame(slug) {
   setStatus('', 'loading…');
   $('#playOverlay').hidden = true;
 
-  if (game?.unavailable) {
-    // Pre-emptively show banner — even before iframe load, since we know.
+  if (game?.proxyBlocked || game?.unavailable) {
     showMovedBanner(game);
   } else {
-    // Check after load
     checkMovedAfterLoad();
   }
 }
