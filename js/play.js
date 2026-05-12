@@ -100,14 +100,20 @@ function showMovedBanner(game) {
   const overlay = $('#playOverlay');
   const msg = $('#overlayMsg');
   overlay.hidden = false;
+  const altLink = game.alternativeUrl
+    ? `<a href="${game.alternativeUrl}" target="_blank" rel="noopener">${escape(game.alternativeUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))} ↗</a>`
+    : '';
   msg.innerHTML = `
     <strong>${escape(game.name)}</strong> isn't available on Poki anymore.
-    ${escape(game.unavailable || 'Poki removed this title from their catalog.')}
+    <br>${escape(game.unavailable || 'Poki removed this title from their catalog.')}
+    ${altLink ? `<br><br>Play at the publisher: ${altLink}` : ''}
     <br><br>
-    Snippets still appear on the right — useful for archived builds or
-    the same game on its publisher's site.
+    Browser-level sitelock JS in the original build can't be bypassed from inside
+    the iframe — that's a hard browser guarantee, not a proxy bug.
     <br><br>
-    <a href="https://poki.com/en/popular" target="_blank" rel="noopener" style="color: var(--accent);">Browse currently playable games →</a>
+    Snippets on the right still work if you can reach the game elsewhere.
+    <br><br>
+    <a href="https://poki.com/en/popular" target="_blank" rel="noopener">Browse currently playable Poki games →</a>
   `;
 }
 
