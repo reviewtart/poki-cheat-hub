@@ -487,11 +487,10 @@ export const games = [
     name: 'Stickman Hook',
     publisher: 'Madbox',
     engine: 'Custom HTML5',
-    proxyBlocked: 'Playable on poki.com directly — SDK refuses through proxy. Paste snippets in DevTools instead.',
-    alternativeUrl: 'https://poki.com/en/g/stickman-hook',
+    libraryId: '11',  // playable via freebuisness/html mirror
     detect: () => typeof window.game === 'object',
     tags: ['casual', '2d'],
-    features: ['Expose game globals'],
+    features: ['Playable via library mirror', '💎 In-game cheat menu', 'Expose game globals'],
     snippets: [
       {
         id: 'sh-expose',
