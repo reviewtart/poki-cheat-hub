@@ -28,7 +28,7 @@ function readProxy() {
 }
 
 function gameUrlFor(slug) {
-  if (state.proxyBase) return `${state.proxyBase}/poki/en/g/${slug}`;
+  if (state.proxyBase) return `${state.proxyBase}/en/g/${slug}`;
   return `https://poki.com/en/g/${slug}`;
 }
 
