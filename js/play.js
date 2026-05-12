@@ -366,6 +366,8 @@ function showGamePage(slug) {
   $('#gameGridView').hidden = true;
   $('#gamePage').hidden = false;
   $('#gpTitle').textContent = game.name;
+  // Scroll the play section into view
+  document.getElementById('play')?.scrollIntoView({ behavior: 'instant', block: 'start' });
   state.currentSlug = slug;
   const frame = $('#playFrame');
   frame.src = gameUrlFor(slug);
