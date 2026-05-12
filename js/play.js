@@ -122,6 +122,9 @@ function fmtButton(snippet) {
 function escape(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
 
 function renderGameSelect() {
   const sel = $('#playGameSel');
@@ -327,17 +330,110 @@ function bindAdvanced() {
   });
 }
 
+// ────────── Library grid view + game page routing ──────────
+function renderLibraryGrid(filter = '') {
+  const grid = $('#libraryGrid');
+  if (!grid) return;
+  const q = filter.trim().toLowerCase();
+  const filtered = games.filter(g => !q || g.name.toLowerCase().includes(q));
+  $('#playCount').textContent = `${filtered.length} game${filtered.length === 1 ? '' : 's'}`;
+  grid.innerHTML = filtered.map(g => {
+    const cover = g.image || `https://cdn.jsdelivr.net/gh/freebuisness/covers@main/${g.libraryId}.png`;
+    const hasCheats = g.snippets?.length > 0;
+    const badge = hasCheats ? '+cheats' : (g.libraryId ? 'play' : 'snippet');
+    return `
+      <article class="lib-card${hasCheats ? ' has-cheats' : ''}" data-slug="${escapeAttr(g.slug)}">
+        <div class="lib-cover" style="background-image:url('${escapeAttr(cover)}');"></div>
+        <div class="lib-name">${escapeHtml(g.name)}</div>
+        <div class="lib-badge">${badge}</div>
+      </article>`;
+  }).join('');
+  grid.querySelectorAll('.lib-card').forEach(card => {
+    card.addEventListener('click', () => openGamePage(card.dataset.slug));
+  });
+}
+
+function escapeAttr(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function openGamePage(slug) {
+  location.hash = `#game/${slug}`;
+  showGamePage(slug);
+}
+
+function showGamePage(slug) {
+  const game = games.find(g => g.slug === slug);
+  if (!game) return showGrid();
+  $('#gameGridView').hidden = true;
+  $('#gamePage').hidden = false;
+  $('#gpTitle').textContent = game.name;
+  state.currentSlug = slug;
+  const frame = $('#playFrame');
+  frame.src = gameUrlFor(slug);
+  renderButtons(slug);
+  setStatus('', 'loading…');
+  $('#playOverlay').hidden = true;
+  if (game.proxyBlocked || game.unavailable) showMovedBanner(game);
+  else checkMovedAfterLoad();
+
+  // Auto-inject menu when library game frame loads (same-origin guaranteed).
+  if (game.libraryId) {
+    const onLoad = () => {
+      setTimeout(() => {
+        try { frame.contentWindow.eval(buildMenuPayload(game.name)); } catch (e) {}
+      }, 1500);
+      frame.removeEventListener('load', onLoad);
+    };
+    frame.addEventListener('load', onLoad);
+  }
+}
+
+function showGrid() {
+  location.hash = '';
+  $('#gameGridView').hidden = false;
+  $('#gamePage').hidden = true;
+  const frame = $('#playFrame');
+  if (frame) frame.src = 'about:blank';
+}
+
+function bindGamePage() {
+  $('#backToGrid')?.addEventListener('click', showGrid);
+  $('#gpReload')?.addEventListener('click', () => {
+    const f = $('#playFrame'); if (f) f.src = f.src;
+  });
+  $('#gpFullscreen')?.addEventListener('click', () => {
+    const w = document.querySelector('.gp-frame-wrap');
+    if (w?.requestFullscreen) w.requestFullscreen().catch(() => {});
+  });
+  $('#gpInjectMenu')?.addEventListener('click', () => {
+    const frame = $('#playFrame');
+    if (detectAccess(frame) !== 'same-origin') {
+      showToast('Cross-origin — open game on real poki.com and use bookmarklet');
+      return;
+    }
+    const game = games.find(g => g.slug === state.currentSlug);
+    try {
+      frame.contentWindow.eval(buildMenuPayload(game?.name || 'Game'));
+      showToast('Cheat menu opened ⤴');
+    } catch (e) { showToast('Inject err: ' + e.message); }
+  });
+  $('#libSearch')?.addEventListener('input', (e) => renderLibraryGrid(e.target.value));
+}
+
+function handleHashRoute() {
+  const h = location.hash || '';
+  const m = h.match(/^#game\/(.+)$/);
+  if (m) showGamePage(decodeURIComponent(m[1]));
+  else showGrid();
+}
+
 export function bootPlay() {
   readProxy();
-  renderGameSelect();
-  bindAdvanced();
-  const initial = games[0].slug;
-  $('#playGameSel').value = initial;
-  loadGame(initial);
-
-  // periodic status poll
+  bindGamePage();
+  renderLibraryGrid();
+  window.addEventListener('hashchange', handleHashRoute);
+  handleHashRoute();
   setInterval(pollStatus, 2000);
-
-  // also listen to iframe load events
-  $('#playFrame').addEventListener('load', () => setTimeout(pollStatus, 500));
+  // Keep the legacy stuff to avoid errors if other parts reference it
+  bindAdvanced();
+  $('#playFrame')?.addEventListener('load', () => setTimeout(pollStatus, 500));
 }
