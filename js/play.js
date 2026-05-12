@@ -1,8 +1,29 @@
 // Play & cheat — embed a Poki game in an iframe and run cheat snippets
 // against the inner game frame. Cross-origin? we fall back to copy-to-clipboard.
 
-import { games } from './cheats/games.js';
+import { games as pokiGames } from './cheats/games.js';
 import { universal } from './cheats/universal.js';
+import { libraryGames } from './cheats/library-games.js';
+
+// Merge: library-games (551 mirrored, playable) + handcrafted poki entries (with cheats).
+// Hand-crafted entries take precedence when slug matches.
+const handcraftedSlugs = new Set(pokiGames.map(g => g.slug));
+const games = [
+  ...pokiGames,
+  ...libraryGames
+    .filter(lg => !handcraftedSlugs.has(lg.slug))
+    .map(lg => ({
+      slug: lg.slug,
+      name: lg.name,
+      publisher: 'Library mirror',
+      engine: 'HTML5',
+      libraryId: lg.libraryId,
+      image: lg.image,
+      tags: ['library'],
+      features: ['Playable via worker mirror', 'Universal Poki snippets if game uses PokiSDK'],
+      snippets: [],
+    })),
+];
 
 const $ = (s, r = document) => r.querySelector(s);
 
@@ -30,12 +51,16 @@ function readProxy() {
 function gameUrlFor(slug) {
   const game = games.find(g => g.slug === slug);
   if (state.proxyBase) {
-    // If we know the gdn id/build, load the game DIRECTLY without Poki's
-    // React page chrome. That avoids the "Poki React never renders game iframe"
-    // failure mode.
+    // Priority 1: library mirror (freebuisness/html via raw github)
+    // — fully stripped of Poki SDK + sitelock, simplest to iframe.
+    if (game?.libraryId) {
+      return `${state.proxyBase}/play/${game.libraryId}`;
+    }
+    // Priority 2: direct gdn URL (real Poki game files, bypassing Poki React)
     if (game?.gdnId && game?.gdnBuild) {
       return `${state.proxyBase}/_gdn/${game.gdnId}/${game.gdnBuild}/index.html`;
     }
+    // Priority 3: poki.com proxy (usually fails React rendering)
     return `${state.proxyBase}/en/g/${slug}`;
   }
   return `https://poki.com/en/g/${slug}`;
