@@ -316,6 +316,114 @@ function isPokiSdkPath(p) {
   return /\/poki-sdk[a-zA-Z0-9_-]*\.js$/.test(p);
 }
 
+// Ad-killer injected into /play/<id> mirror games. The freebuisness/html
+// mirror embeds AdSense (#sidebarad1/2, googletagmanager, obfuscated loaders).
+// We block requests + strip DOM nodes + hide dim backdrops continuously.
+const AD_KILLER = `<style id="pch-ad-css">
+  /* Pre-emptive CSS hide so ads stay invisible even before JS runs */
+  #sidebarad1, #sidebarad2,
+  iframe[src*="googlesyndication"],
+  iframe[src*="googleads"],
+  iframe[src*="doubleclick"],
+  iframe[src*="googletag"],
+  iframe[id^="aswift"],
+  iframe[id^="google_ads"],
+  ins.adsbygoogle,
+  [id^="aswift_"],
+  [id*="google_ads_iframe"],
+  div[data-google-query-id] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+</style>
+<script>
+(function(){
+  const AD_RE = /googlesyndication|doubleclick|adservice|adsystem|pagead|googletagmanager|googletagservices|google-analytics\\.com|tpc\\.googlesyndication|partner\\.googleadservices|fundingchoices|criteo|pubmatic|adnxs|amazon-adsystem|outbrain|taboola|imasdk|moatads|smartadserver/i;
+
+  // 1. Block ad-network fetches
+  try {
+    const _fetch = window.fetch;
+    window.fetch = function(input) {
+      const u = typeof input === 'string' ? input : (input && input.url) || '';
+      if (AD_RE.test(u)) return Promise.resolve(new Response('', { status: 204 }));
+      return _fetch.apply(this, arguments);
+    };
+  } catch(e){}
+  try {
+    const X = window.XMLHttpRequest;
+    if (X) {
+      const o = X.prototype.open;
+      X.prototype.open = function(m, u) { this.__pch_u = u; return o.apply(this, arguments); };
+      const s = X.prototype.send;
+      X.prototype.send = function() { if (AD_RE.test(this.__pch_u || '')) { this.abort(); return; } return s.apply(this, arguments); };
+    }
+  } catch(e){}
+
+  // 2. Block <script>/<iframe>.src assignments to ad URLs
+  try {
+    for (const proto of [HTMLScriptElement.prototype, HTMLIFrameElement.prototype]) {
+      const desc = Object.getOwnPropertyDescriptor(proto, 'src');
+      if (!desc || !desc.set) continue;
+      Object.defineProperty(proto, 'src', {
+        get: desc.get,
+        set: function(v) {
+          if (AD_RE.test(String(v))) { try { console.warn('[ad-killer] blocked .src=', v); } catch(_){} return; }
+          return desc.set.call(this, v);
+        },
+        configurable: true,
+      });
+    }
+  } catch(e){}
+
+  // 3. Strip DOM nodes — known selectors + dim overlays containing ad iframes
+  const SELECTORS = [
+    '#sidebarad1', '#sidebarad2',
+    'iframe[src*="googleads"]', 'iframe[src*="googlesyndication"]',
+    'iframe[src*="doubleclick"]', 'iframe[src*="googletag"]',
+    'iframe[id^="aswift"]', 'iframe[id^="google_ads"]',
+    'ins.adsbygoogle', '[id^="aswift_"]', '[id*="google_ads_iframe"]',
+    'div[data-google-query-id]',
+    'script[src*="googlesyndication"]', 'script[src*="googletagmanager"]',
+    'script[src*="googletagservices"]',
+  ];
+  const killAds = () => {
+    let n = 0;
+    for (const sel of SELECTORS) {
+      try { document.querySelectorAll(sel).forEach(el => { try { el.remove(); n++; } catch(_){} }); } catch(_){}
+    }
+    // Fixed full-viewport overlays with dim backdrop OR containing an ad iframe
+    try {
+      document.querySelectorAll('div').forEach(d => {
+        if (!d.isConnected) return;
+        const cs = getComputedStyle(d);
+        if (cs.position !== 'fixed') return;
+        const z = parseInt(cs.zIndex || '0', 10);
+        const r = d.getBoundingClientRect();
+        const isLarge = r.width >= window.innerWidth * 0.7 && r.height >= window.innerHeight * 0.7;
+        const bg = cs.backgroundColor || '';
+        const isDim = /rgba\\(\\s*0\\s*,\\s*0\\s*,\\s*0\\s*,\\s*0?\\.[3-9]/.test(bg);
+        const hasAdIframe = d.querySelector('iframe[src*="google"], iframe[src*="doubleclick"], iframe[id^="google_ads"], iframe[id^="aswift"]');
+        const hasOwnCanvas = d.querySelector('canvas');
+        if (z >= 1000 && isLarge && !hasOwnCanvas && (isDim || hasAdIframe)) {
+          try { d.remove(); n++; } catch(_){}
+        }
+      });
+    } catch(_){}
+    if (n) try { console.log('[ad-killer] removed', n, 'nodes'); } catch(_){}
+  };
+  killAds();
+  try {
+    new MutationObserver(killAds).observe(document.documentElement, { childList: true, subtree: true });
+  } catch(_){}
+  setInterval(killAds, 800);
+
+  try { console.log('[ad-killer] armed'); } catch(_){}
+})();
+</script>`;
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -349,7 +457,7 @@ export default {
         const r = await fetch(upstream, { cf: { cacheTtl: 300, cacheEverything: true } });
         if (!r.ok) return new Response('game not found: ' + id, { status: r.status });
         let text = await r.text();
-        text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}`);
+        text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}${AD_KILLER}`);
         return new Response(text, {
           status: 200,
           headers: {
@@ -429,7 +537,7 @@ export default {
     // Inject sitelock-buster at the top of every HTML response so the game's
     // anti-iframe redirect can't take effect.
     if (ct.includes('html')) {
-      text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}`);
+      text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}${AD_KILLER}`);
     }
     return new Response(text, {
       status: upstreamResp.status,
