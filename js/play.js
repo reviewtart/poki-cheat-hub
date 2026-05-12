@@ -91,9 +91,45 @@ function escape(s) {
 function renderGameSelect() {
   const sel = $('#playGameSel');
   sel.innerHTML = games.map(g =>
-    `<option value="${g.slug}">${escape(g.name)}</option>`
+    `<option value="${g.slug}">${escape(g.name)}${g.unavailable ? ' (unavailable)' : ''}</option>`
   ).join('');
   sel.addEventListener('change', () => loadGame(sel.value));
+}
+
+function showMovedBanner(game) {
+  const overlay = $('#playOverlay');
+  const msg = $('#overlayMsg');
+  overlay.hidden = false;
+  msg.innerHTML = `
+    <strong>${escape(game.name)}</strong> isn't available on Poki anymore.
+    ${escape(game.unavailable || 'Poki removed this title from their catalog.')}
+    <br><br>
+    Snippets still appear on the right — useful for archived builds or
+    the same game on its publisher's site.
+    <br><br>
+    <a href="https://poki.com/en/popular" target="_blank" rel="noopener" style="color: var(--accent);">Browse currently playable games →</a>
+  `;
+}
+
+async function checkMovedAfterLoad() {
+  // After iframe loads, peek inside (same-origin via proxy) and check for the
+  // "Sorry has moved" marker. If present, show the overlay.
+  await new Promise(r => setTimeout(r, 5000));
+  const frame = $('#playFrame');
+  try {
+    const wins = walkFrames(frame.contentWindow);
+    for (const w of wins) {
+      try {
+        const text = w.document.body?.innerText || '';
+        if (/has moved|click here for.*to play/i.test(text)) {
+          const game = games.find(g => g.slug === state.currentSlug);
+          if (game) showMovedBanner(game);
+          return;
+        }
+      } catch {}
+    }
+  } catch {}
+  $('#playOverlay').hidden = true;
 }
 
 function renderButtons(slug) {
@@ -186,11 +222,20 @@ function pollStatus() {
 
 function loadGame(slug) {
   state.currentSlug = slug;
+  const game = games.find(g => g.slug === slug);
   const frame = $('#playFrame');
   frame.src = gameUrlFor(slug);
   renderButtons(slug);
   setStatus('', 'loading…');
   $('#playOverlay').hidden = true;
+
+  if (game?.unavailable) {
+    // Pre-emptively show banner — even before iframe load, since we know.
+    showMovedBanner(game);
+  } else {
+    // Check after load
+    checkMovedAfterLoad();
+  }
 }
 
 function bindAdvanced() {
