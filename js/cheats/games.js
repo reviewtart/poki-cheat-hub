@@ -258,18 +258,20 @@ export const games = [
     ],
   },
 
-  // ─── Historically popular games that Poki has since removed ───
-  // Snippets still useful for educational purposes / archived builds.
+  // ─── Games whose SDK refuses to load through the proxy ───
+  // Still fully playable on poki.com directly. Use the snippets there
+  // (DevTools console / bookmarklet) — the iframe play mode is the one
+  // limitation, not the snippet mode.
 
   {
     slug: 'subway-surfers',
     name: 'Subway Surfers',
     publisher: 'Sybo Games / Kiloo',
     engine: 'PixiJS + V3D',
-    unavailable: 'Removed from Poki. Plays at the publisher: subwaysurfers.com or kiloo.com.',
-    alternativeUrl: 'https://www.subwaysurfers.com/',
+    proxyBlocked: 'Playable on poki.com directly — the Poki SDK checks parent origin and refuses to load through this proxy. Open poki.com/en/g/subway-surfers in another tab and paste the snippets in DevTools instead.',
+    alternativeUrl: 'https://poki.com/en/g/subway-surfers',
     detect: () => typeof window.game === 'object' && typeof window.game.freeRevivals !== 'undefined',
-    tags: ['runner', '3d', 'archived'],
+    tags: ['runner', '3d'],
     features: ['Infinite revives', 'Custom speed', 'Pause physics'],
     snippets: [
       {
@@ -303,10 +305,10 @@ export const games = [
     name: 'Stickman Hook',
     publisher: 'Madbox',
     engine: 'Custom HTML5',
-    unavailable: 'Removed from Poki. Original at madbox.io.',
-    alternativeUrl: 'https://www.madbox.io/games/stickman-hook',
+    proxyBlocked: 'Playable on poki.com directly — SDK refuses through proxy. Paste snippets in DevTools instead.',
+    alternativeUrl: 'https://poki.com/en/g/stickman-hook',
     detect: () => typeof window.game === 'object',
-    tags: ['casual', '2d', 'archived'],
+    tags: ['casual', '2d'],
     features: ['Expose game globals'],
     snippets: [
       {
