@@ -1,5 +1,7 @@
 # Poki Cheat Hub
 
+> Built by **Thành Đạt**
+
 A static, client-side cheat generator for [Poki](https://poki.com) games. No accounts, no backend, no analytics. Drop the folder on GitHub Pages / Cloudflare Pages and you're done.
 
 > **Two deploy modes.** Pick the one that matches your risk appetite.

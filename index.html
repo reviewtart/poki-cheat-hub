@@ -21,11 +21,12 @@
       <p class="brand-tag">client-side cheat generator · v0.1</p>
     </div>
     <nav class="top-nav" aria-label="Primary">
+      <a href="#play">Play</a>
       <a href="#universal">Universal</a>
       <a href="#games">Games</a>
       <a href="#how">How to use</a>
       <a href="#faq">FAQ</a>
-      <a href="https://github.com/" class="nav-cta" id="ghLink" target="_blank" rel="noopener">GitHub →</a>
+      <a href="https://github.com/reviewtart/poki-cheat-hub" class="nav-cta" id="ghLink" target="_blank" rel="noopener">GitHub →</a>
     </nav>
   </header>
 
@@ -68,6 +69,43 @@ sdk.displayAd      = () =&gt; <span class="c-k">false</span>;
 game.freeRevivals = <span class="c-n">999</span>;
 game.hero.speed   = <span class="c-n">2</span>;</code></pre>
         </aside>
+      </div>
+    </section>
+
+    <section id="play" class="play" aria-labelledby="playTitle">
+      <div class="section-head">
+        <h2 id="playTitle">Play &amp; cheat</h2>
+        <p>Pick a game, hit a cheat button, the snippet runs in the embedded frame. Requires
+          same-origin: serve this site from <code>localhost:1234</code> / <code>8080</code> / <code>11001</code>
+          (Poki's CSP whitelist) <em>or</em> through the Cloudflare Worker proxy.</p>
+      </div>
+
+      <div class="play-grid">
+        <aside class="play-sidebar">
+          <label class="play-game-select">
+            <span>Game</span>
+            <select id="playGameSel"></select>
+          </label>
+          <div class="play-status" id="playStatus" data-mode="">
+            <span class="status-dot"></span>
+            <span class="status-text">detecting…</span>
+          </div>
+          <p class="play-hint">Click a button to run. If injection is blocked (cross-origin),
+            we copy the snippet and ask you to paste it in the game frame's DevTools console.</p>
+          <div class="play-buttons" id="playButtons"></div>
+          <details class="play-advanced">
+            <summary>Advanced</summary>
+            <button class="btn btn-ghost" id="reloadFrame">Reload game frame</button>
+            <button class="btn btn-ghost" id="popoutFrame">Open game in new tab</button>
+            <button class="btn btn-ghost" id="inspectFrame">Probe frame globals</button>
+          </details>
+        </aside>
+        <div class="play-frame-wrap">
+          <iframe id="playFrame" title="Poki game" allow="autoplay; fullscreen" allowfullscreen></iframe>
+          <div class="play-overlay" id="playOverlay" hidden>
+            <p class="overlay-msg" id="overlayMsg"></p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -224,13 +262,14 @@ game.hero.speed   = <span class="c-n">2</span>;</code></pre>
 
   <footer class="site-footer">
     <p>
-      Built for research and curiosity. Not affiliated with or endorsed by Poki BV.
+      Built by <strong>Thành Đạt</strong> for research and curiosity.
+      Not affiliated with or endorsed by Poki BV.
       Game trademarks belong to their respective owners.
     </p>
     <p class="footer-meta">
       <a href="#" id="updatedStamp">updated…</a>
       ·
-      <a href="https://github.com/" target="_blank" rel="noopener">repo</a>
+      <a href="https://github.com/reviewtart/poki-cheat-hub" target="_blank" rel="noopener">repo</a>
     </p>
   </footer>
 
