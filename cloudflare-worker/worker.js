@@ -24,6 +24,9 @@ const STRIP_RESP_HEADERS = new Set([
   'cross-origin-opener-policy',
   'cross-origin-embedder-policy',
   'cross-origin-resource-policy',
+  // Strip preload Link header — Poki sends "Link: <poki-cdn..poki-sdk.js>; rel=preload"
+  // which makes the browser fetch the real SDK directly, bypassing our stub.
+  'link',
 ]);
 
 const STATIC_ORIGIN = 'https://raw.githubusercontent.com/reviewtart/poki-cheat-hub/main';
@@ -109,11 +112,208 @@ function rewriteUrlAbsolute(absoluteUrl, proxyOrigin) {
 
 function rewriteBody(body, proxyOrigin) {
   return body
+    // Protocol-relative first (//host/...) so we don't double-rewrite
+    .replace(/(["'\(\s])\/\/(?:www\.)?poki\.com/g, `$1${proxyOrigin}`)
+    .replace(/(["'\(\s])\/\/games\.poki\.com/g, `$1${proxyOrigin}/_games`)
+    .replace(/(["'\(\s])\/\/game-cdn\.poki\.com/g, `$1${proxyOrigin}/_cdn`)
+    .replace(/(["'\(\s])\/\/a\.poki-cdn\.com/g, `$1${proxyOrigin}/_acdn`)
+    .replace(/(["'\(\s])\/\/([a-z0-9-]+)\.gdn\.poki\.com/g, `$1${proxyOrigin}/_gdn/$2`)
+    // Absolute
     .replace(/https?:\/\/(?:www\.)?poki\.com/g, proxyOrigin)
     .replace(/https?:\/\/games\.poki\.com/g, `${proxyOrigin}/_games`)
     .replace(/https?:\/\/game-cdn\.poki\.com/g, `${proxyOrigin}/_cdn`)
     .replace(/https?:\/\/a\.poki-cdn\.com/g, `${proxyOrigin}/_acdn`)
-    .replace(/https?:\/\/([a-z0-9-]+)\.gdn\.poki\.com/g, `${proxyOrigin}/_gdn/$1`);
+    .replace(/https?:\/\/([a-z0-9-]+)\.gdn\.poki\.com/g, `${proxyOrigin}/_gdn/$1`)
+    // Neutralize sitelock redirects ("/sitelock" → harmless data URL no-op)
+    .replace(/(["'`])\/sitelock(["'`])/g, '$1data:text/html,<title>sitelock-blocked</title>$2')
+    .replace(/(["'`])\/_games\/sitelock(["'`])/g, '$1data:text/html,<title>sitelock-blocked</title>$2');
+}
+
+// Anti-sitelock pre-script injected at the top of every HTML page served.
+// Blocks navigation to /sitelock, game-not-available, and any poki.com URL
+// that's not via our proxy origin. Also fakes top-origin checks.
+const SITELOCK_BUSTER = `<script>
+(function(){
+  const PROXY_ORIGIN = location.origin;
+  const isBlock = (u) => {
+    const s = String(u || '');
+    return /\\/sitelock(?:[?#/]|$)/i.test(s)
+        || /game-not-available/i.test(s)
+        || (/^https?:\\/\\/(?:www\\.|games\\.)?poki\\.com/i.test(s) && !s.startsWith(PROXY_ORIGIN));
+  };
+  const log = (label, u) => { try { console.warn('[sitelock-block:' + label + ']', u); } catch (e) {} };
+
+  try {
+    const realAssign = Location.prototype.assign;
+    Location.prototype.assign = function(u) { if (isBlock(u)) { log('assign', u); return; } return realAssign.call(this, u); };
+  } catch (e) {}
+  try {
+    const realReplace = Location.prototype.replace;
+    Location.prototype.replace = function(u) { if (isBlock(u)) { log('replace', u); return; } return realReplace.call(this, u); };
+  } catch (e) {}
+  try {
+    const desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+    if (desc?.set) {
+      Object.defineProperty(Location.prototype, 'href', {
+        get: desc.get,
+        set: function(v) { if (isBlock(v)) { log('href-set', v); return; } desc.set.call(this, v); },
+        configurable: true,
+      });
+    }
+  } catch (e) {}
+
+  // Patch window.open similarly
+  try {
+    const realOpen = window.open;
+    window.open = function(u, ...a) { if (isBlock(u)) { log('open', u); return null; } return realOpen.call(window, u, ...a); };
+  } catch (e) {}
+
+  // Intercept <meta http-equiv=refresh> insertions
+  try {
+    const observer = new MutationObserver((mut) => {
+      for (const m of mut) {
+        for (const node of m.addedNodes) {
+          if (node.tagName === 'META' && /refresh/i.test(node.getAttribute?.('http-equiv') || '')) {
+            const c = node.getAttribute('content') || '';
+            if (isBlock(c.split(';')[1])) { log('meta-refresh', c); node.remove(); }
+          }
+          if (node.tagName === 'IFRAME' && isBlock(node.src)) { log('iframe-src', node.src); node.remove(); }
+        }
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+
+  // Override window.location setter (window.location = "..." direct assignment)
+  try {
+    const winLocDesc = Object.getOwnPropertyDescriptor(Window.prototype, 'location')
+                    || Object.getOwnPropertyDescriptor(window, 'location');
+    if (winLocDesc?.set) {
+      Object.defineProperty(window, 'location', {
+        get: winLocDesc.get.bind(window),
+        set: function(v) { if (isBlock(v)) { log('window.location-set', v); return; } winLocDesc.set.call(window, v); },
+        configurable: true,
+      });
+    }
+  } catch (e) {}
+
+  // Override document.location too
+  try {
+    const docLocDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'location')
+                    || Object.getOwnPropertyDescriptor(document, 'location');
+    if (docLocDesc?.set) {
+      Object.defineProperty(document, 'location', {
+        get: docLocDesc.get.bind(document),
+        set: function(v) { if (isBlock(v)) { log('document.location-set', v); return; } docLocDesc.set.call(document, v); },
+        configurable: true,
+      });
+    }
+  } catch (e) {}
+
+  // Block form submissions to blocked URLs
+  try {
+    document.addEventListener('submit', function(e) {
+      if (isBlock(e.target?.action)) { log('form-submit', e.target.action); e.preventDefault(); e.stopPropagation(); }
+    }, true);
+  } catch (e) {}
+
+  // Block <a> clicks
+  try {
+    document.addEventListener('click', function(e) {
+      const a = e.target?.closest?.('a[href]');
+      if (a && isBlock(a.href)) { log('anchor-click', a.href); e.preventDefault(); e.stopPropagation(); }
+    }, true);
+  } catch (e) {}
+
+  // Fake document.referrer = poki.com (some games verify)
+  try { Object.defineProperty(document, 'referrer', { get: () => 'https://poki.com/', configurable: true }); } catch (e) {}
+
+  // Fake top.location checks — many games do top.location.hostname === 'poki.com'
+  try {
+    const fakeHostname = 'poki.com';
+    const origDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'hostname');
+    Object.defineProperty(Location.prototype, 'hostname', {
+      get: function() {
+        const real = origDesc.get.call(this);
+        // Tell games we are poki.com
+        if (real.endsWith('workers.dev') || real === PROXY_ORIGIN.replace(/^https?:\\/\\//, '').replace(/[\\/:]/, '')) return fakeHostname;
+        return real;
+      },
+      configurable: true,
+    });
+  } catch (e) {}
+
+  // Nuke any service workers — Poki may have left one that redirects.
+  try {
+    if (navigator.serviceWorker?.getRegistrations) {
+      navigator.serviceWorker.getRegistrations().then(rs => {
+        for (const r of rs) { r.unregister(); console.warn('[sitelock-buster] unregistered SW:', r.scope); }
+      });
+    }
+  } catch (e) {}
+
+  // Track every navigation attempt so we can debug
+  window.addEventListener('beforeunload', function () {
+    console.warn('[sitelock-buster] beforeunload! current=' + location.href);
+  }, true);
+
+  console.log('[sitelock-buster] armed @ ' + PROXY_ORIGIN);
+})();
+</script>`;
+
+// Replacement for Poki's SDK. The real SDK checks the parent origin and
+// refuses to start the game when it's not poki.com — that's what makes
+// removed-from-Poki games show "SORRY! not available". Our stub fakes a
+// happy SDK so the game initialises normally.
+const POKI_SDK_STUB = `
+(function () {
+  if (window.PokiSDK) return;
+  const noop = () => {};
+  const ok = () => Promise.resolve();
+  const okTrue = () => Promise.resolve(true);
+  const stub = {
+    init: ok,
+    initWithVideoHB: ok,
+    commercialBreak: ok,
+    rewardedBreak: okTrue,
+    displayAd: () => false,
+    destroyAd: noop,
+    getLeaderboard: () => Promise.resolve([]),
+    shareableURL: () => Promise.resolve(''),
+    getURLParam: (k) => new URLSearchParams(location.search).get(k),
+    getLanguage: () => 'en',
+    getIsoLanguage: () => 'en',
+    isAdBlocked: () => false,
+    getUser: () => null,
+    getToken: () => null,
+    login: () => Promise.resolve(null),
+    generateScreenshot: () => Promise.resolve(),
+    captureError: noop,
+    customEvent: noop,
+    gameInteractive: noop,
+    gameLoadingFinished: noop,
+    gameLoadingProgress: noop,
+    gameLoadingStart: noop,
+    gameplayStart: noop,
+    gameplayStop: noop,
+    happyTime: noop,
+    logError: noop,
+    muteAd: noop,
+    roundEnd: noop,
+    roundStart: noop,
+    sendHighscore: noop,
+    setActiveLanguage: noop,
+    setDebug: noop,
+    setVolume: noop,
+    EVENTS: {},
+  };
+  window.PokiSDK = stub;
+  try { console.log('[poki-sdk-stub] loaded — bypassing origin check'); } catch (e) {}
+})();
+`;
+
+function isPokiSdkPath(p) {
+  return /\/poki-sdk[a-zA-Z0-9_-]*\.js$/.test(p);
 }
 
 export default {
@@ -126,6 +326,15 @@ export default {
     }
     if (isStaticPath(pathname)) {
       return serveStatic(pathname);
+    }
+    if (isPokiSdkPath(pathname)) {
+      return new Response(POKI_SDK_STUB, {
+        headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': 'public, max-age=300',
+          'access-control-allow-origin': '*',
+        },
+      });
     }
 
     const { url: upstreamUrl } = pickUpstream(pathname);
@@ -184,9 +393,14 @@ export default {
       });
     }
 
-    const text = await upstreamResp.text();
-    const rewritten = rewriteBody(text, url.origin);
-    return new Response(rewritten, {
+    let text = await upstreamResp.text();
+    text = rewriteBody(text, url.origin);
+    // Inject sitelock-buster at the top of every HTML response so the game's
+    // anti-iframe redirect can't take effect.
+    if (ct.includes('html')) {
+      text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}`);
+    }
+    return new Response(text, {
       status: upstreamResp.status,
       headers: respHeaders,
     });
