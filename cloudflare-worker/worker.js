@@ -52,13 +52,29 @@ function staticContentType(p) {
   if (p.endsWith('.png')) return 'image/png';
   return 'application/octet-stream';
 }
+// CSS patch injected into index.html — forces .play-overlay[hidden] to be
+// truly hidden. The base CSS has `.play-overlay { display: flex; … }` which
+// overrides the HTML `hidden` attribute, so the dim 60%-black overlay covers
+// the iframe at all times and steals all clicks. We add a !important rule
+// that ensures `hidden` actually hides the element.
+const CHEAT_HUB_CSS_PATCH = `<style id="pch-css-patch">
+  .play-overlay[hidden] { display: none !important; }
+</style>`;
+
 async function serveStatic(pathname) {
   const remote = pathname === '/' ? '/index.html' : pathname;
   const resp = await fetch(STATIC_ORIGIN + remote, {
     cf: { cacheTtl: 5, cacheEverything: true },
   });
   if (!resp.ok) return new Response('not found', { status: 404 });
-  return new Response(resp.body, {
+  let body = resp.body;
+  // For HTML responses, inject CSS patch into <head>
+  if (pathname === '/' || pathname.endsWith('.html')) {
+    const text = await resp.text();
+    const patched = text.replace(/<\/head>/i, `${CHEAT_HUB_CSS_PATCH}</head>`);
+    body = patched;
+  }
+  return new Response(body, {
     status: 200,
     headers: {
       'content-type': staticContentType(pathname),
@@ -265,17 +281,27 @@ const SITELOCK_BUSTER = `<script>
 // refuses to start the game when it's not poki.com — that's what makes
 // removed-from-Poki games show "SORRY! not available". Our stub fakes a
 // happy SDK so the game initialises normally.
+//
+// IMPORTANT: commercialBreak / rewardedBreak MUST invoke their callback
+// arguments synchronously. Many games use the legacy callback form:
+//   PokiSDK.commercialBreak(beforeAdCb, afterAdCb)
+// and depend on afterAdCb being called to advance from splash → gameplay.
+// If we only return Promise.resolve() without invoking the callbacks,
+// the game stays frozen on the PLAY screen forever.
 const POKI_SDK_STUB = `
 (function () {
   if (window.PokiSDK) return;
   const noop = () => {};
-  const ok = () => Promise.resolve();
-  const okTrue = () => Promise.resolve(true);
+  // Invoke any function args, then return a resolved Promise.
+  const adBreak = (resolveValue) => function () {
+    for (const a of arguments) { try { if (typeof a === 'function') a(); } catch(e){} }
+    return Promise.resolve(resolveValue);
+  };
   const stub = {
-    init: ok,
-    initWithVideoHB: ok,
-    commercialBreak: ok,
-    rewardedBreak: okTrue,
+    init: () => Promise.resolve({ noAds: true, userInfo: null }),
+    initWithVideoHB: () => Promise.resolve({ noAds: true, userInfo: null }),
+    commercialBreak: adBreak(undefined),
+    rewardedBreak: adBreak(true),
     displayAd: () => false,
     destroyAd: noop,
     getLeaderboard: () => Promise.resolve([]),
@@ -308,7 +334,23 @@ const POKI_SDK_STUB = `
     EVENTS: {},
   };
   window.PokiSDK = stub;
-  try { console.log('[poki-sdk-stub] loaded — bypassing origin check'); } catch (e) {}
+
+  // Stub for prebid.js — the mirror games load prebid4.12.0.js from jsdelivr
+  // which now returns 403 "Package size exceeded". Without window.pbjs the
+  // game's ad-init code may throw or wait forever before unlocking PLAY.
+  if (!window.pbjs) {
+    window.pbjs = {
+      que: { push: (fn) => { try { typeof fn === 'function' && fn(); } catch(e){} } },
+      onEvent: noop, offEvent: noop,
+      requestBids: (opts) => { try { opts?.bidsBackHandler?.(); } catch(e){} },
+      setConfig: noop, addAdUnits: noop, getBidResponses: () => ({}),
+      getBidResponsesForAdUnitCode: () => ({ bids: [] }),
+      getHighestCpmBids: () => [],
+      setTargetingForGPTAsync: noop,
+      enableAnalytics: noop, getEvents: () => [],
+    };
+  }
+  try { console.log('[poki-sdk-stub] loaded — PokiSDK + pbjs ready'); } catch (e) {}
 })();
 `;
 
@@ -316,9 +358,50 @@ function isPokiSdkPath(p) {
   return /\/poki-sdk[a-zA-Z0-9_-]*\.js$/.test(p);
 }
 
-// Ad-killer injected into /play/<id> mirror games. The freebuisness/html
-// mirror embeds AdSense (#sidebarad1/2, googletagmanager, obfuscated loaders).
-// We block requests + strip DOM nodes + hide dim backdrops continuously.
+// Strip hostile / wasteful junk from freebuisness/html mirror HTML before serving.
+// Mirror embeds:
+//   1) Sidebar ad slots (#sidebarad1, #sidebarad2) — empty containers
+//   2) googletagmanager async script + inline gtag() config
+//   3) Cloudflare insights beacon (analytics)
+//   4) Obfuscated trailing inline script that runs setInterval and
+//      injects ad <script> elements via crypto.randomUUID()
+// Removing them server-side means no DOM churn for AD_KILLER to chase.
+function stripMirrorJunk(html) {
+  return html
+    // 1) Sidebar ad containers (empty divs)
+    .replace(/<div\s+id=["']sidebarad[12]["'][\s\S]*?<\/div>\s*<\/div>/gi, '')
+    .replace(/<div\s+id=["']sidebarad[12]["'][^>]*>[\s\S]*?<\/div>/gi, '')
+    // 2) googletagmanager + gtag config
+    .replace(/<script\s+async\s+src=["']https?:\/\/www\.googletagmanager\.com[^"']*["'][^>]*><\/script>/gi, '')
+    .replace(/<script>\s*window\.dataLayer[\s\S]*?gtag\([\s\S]*?<\/script>/gi, '')
+    // 3) Cloudflare insights beacon
+    .replace(/<script[^>]*src=["']https?:\/\/static\.cloudflareinsights\.com[^"']*["'][^>]*><\/script>/gi, '')
+    // 4) Obfuscated trailing script — identified by hallmarks:
+    //    `function _0x[hex]` or `(function(<obfuscated>,<obfuscated>){...crypto`
+    //    Match any <script>...</script> block that contains both `crypto` and `_0x`/obfuscated-fn-name patterns.
+    .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (full, body) => {
+      const hasCrypto = /\bcrypto\s*\[/.test(body) || /crypto\.randomUUID/.test(body);
+      const hasObf = /\bfunction\s+_0x[0-9a-f]+\b/.test(body) || /\bsFfEkK\$fMziBAJZwZbkuvp\b/.test(body) || /\b_0x[0-9a-f]{4,}\(/.test(body);
+      const hasLongObfTokens = (body.match(/\b[a-zA-Z_$][a-zA-Z_$0-9]{20,}\b/g) || []).length > 15;
+      if (hasCrypto && (hasObf || hasLongObfTokens)) return ''; // strip
+      return full;
+    });
+}
+
+// Ad-killer + game-unblocker injected into /play/<id> mirror games.
+// The freebuisness/html mirror:
+//   - embeds AdSense (#sidebarad1/2, googletagmanager, obfuscated loaders)
+//   - loads prebid4.12.0.js from jsdelivr (now returns 403 — package size limit)
+//   - has its own poki3.js stub that may not invoke commercialBreak callbacks
+// Without window.pbjs (prebid) defined, and without commercialBreak callbacks
+// being invoked, the game's PLAY button click handler waits forever and the
+// game appears unresponsive ("không tương tác được").
+//
+// We:
+//   - stub window.pbjs to satisfy prebid-dependent code paths
+//   - patch PokiSDK.commercialBreak / rewardedBreak after poki3.js loads
+//     so they invoke any callback arguments before resolving
+//   - block ad-network fetches + remove ad DOM nodes
 const AD_KILLER = `<style id="pch-ad-css">
   /* Pre-emptive CSS hide so ads stay invisible even before JS runs */
   #sidebarad1, #sidebarad2,
@@ -341,6 +424,75 @@ const AD_KILLER = `<style id="pch-ad-css">
 </style>
 <script>
 (function(){
+  // ─── prebid.js (pbjs) stub ──────────────────────────────────────────
+  // The mirror loads jsdelivr's prebid4.12.0.js which now returns 403.
+  // Game code that depends on window.pbjs being defined (header bidding)
+  // can stall the PLAY-button click handler. Define a no-op pbjs so any
+  // pbjs.que.push(fn) / pbjs.requestBids({bidsBackHandler}) call works.
+  const noop = () => {};
+  if (!window.pbjs) {
+    window.pbjs = {
+      que: { push: (fn) => { try { typeof fn === 'function' && fn(); } catch(e){} } },
+      cmd: { push: (fn) => { try { typeof fn === 'function' && fn(); } catch(e){} } },
+      onEvent: noop, offEvent: noop,
+      requestBids: (opts) => { try { opts?.bidsBackHandler?.(); } catch(e){} },
+      setConfig: noop, addAdUnits: noop, removeAdUnit: noop,
+      getBidResponses: () => ({}),
+      getBidResponsesForAdUnitCode: () => ({ bids: [] }),
+      getHighestCpmBids: () => [],
+      setTargetingForGPTAsync: noop,
+      enableAnalytics: noop, getEvents: () => [],
+      bidderTimeout: 1000, libLoaded: true,
+    };
+    try { console.log('[pch-stub] pbjs ready'); } catch(_){}
+  }
+
+  // ─── PokiSDK setter trap ─────────────────────────────────────────────
+  // The mirror's poki3.js loads first, defining a *queue-based* PokiSDK stub
+  // that enqueues every method call (init, commercialBreak, …) and waits for
+  // poki2.js to load to dequeue them. poki2.js is the REAL SDK that tries to
+  // talk to Poki backend — which fails on our proxy origin, so the queue
+  // never drains and the game stays frozen on splash.
+  //
+  // We install a setter trap on window.PokiSDK BEFORE poki3.js runs. Every
+  // time poki3.js (or anything else) assigns window.PokiSDK = obj, we keep
+  // the obj BUT immediately replace its async-gated methods with versions
+  // that resolve synchronously + invoke any callback arguments. This way:
+  //   - bundle.js sees a valid PokiSDK
+  //   - init() / commercialBreak() / rewardedBreak() resolve immediately
+  //   - legacy callback API (beforeAdCb, afterAdCb) also fires
+  //   - game advances splash → gameplay regardless of poki2.js
+  const SDK_NOAD = { noAds: true, userInfo: null };
+  const sdkOverride = (sdk) => {
+    if (!sdk || sdk.__pch_patched) return sdk;
+    const adBreak = (resolveValue) => function () {
+      for (const a of arguments) { try { if (typeof a === 'function') a(); } catch(e){} }
+      return Promise.resolve(resolveValue);
+    };
+    sdk.init = () => Promise.resolve(SDK_NOAD);
+    sdk.initWithVideoHB = () => Promise.resolve(SDK_NOAD);
+    sdk.commercialBreak = adBreak(undefined);
+    sdk.rewardedBreak = adBreak(true);
+    sdk.displayAd = () => false;
+    sdk.isAdBlocked = () => false;
+    sdk.getLeaderboard = () => Promise.resolve([]);
+    sdk.shareableURL = () => Promise.resolve('');
+    sdk.__pch_patched = true;
+    try { console.log('[pch-stub] PokiSDK override applied'); } catch(_){}
+    return sdk;
+  };
+  let _sdk;
+  try {
+    Object.defineProperty(window, 'PokiSDK', {
+      get: () => _sdk,
+      set: (v) => { _sdk = sdkOverride(v); },
+      configurable: true,
+    });
+    try { console.log('[pch-stub] PokiSDK setter trap installed'); } catch(_){}
+  } catch (e) {
+    try { console.warn('[pch-stub] PokiSDK trap install failed:', e.message); } catch(_){}
+  }
+
   const AD_RE = /googlesyndication|doubleclick|adservice|adsystem|pagead|googletagmanager|googletagservices|google-analytics\\.com|tpc\\.googlesyndication|partner\\.googleadservices|fundingchoices|criteo|pubmatic|adnxs|amazon-adsystem|outbrain|taboola|imasdk|moatads|smartadserver/i;
 
   // 1. Block ad-network fetches
@@ -415,10 +567,31 @@ const AD_KILLER = `<style id="pch-ad-css">
     if (n) try { console.log('[ad-killer] removed', n, 'nodes'); } catch(_){}
   };
   killAds();
+  // Throttled MutationObserver — only re-run killAds when a relevant node is added.
+  let pending = false;
+  const schedule = () => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; killAds(); });
+  };
   try {
-    new MutationObserver(killAds).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1) continue;
+          const tag = n.tagName;
+          if (tag === 'IFRAME' || tag === 'INS' || tag === 'SCRIPT' ||
+              (tag === 'DIV' && (n.id?.startsWith('aswift') || n.id === 'sidebarad1' || n.id === 'sidebarad2' || /^[a-f0-9-]{30,}$/i.test(n.id||'')))) {
+            schedule();
+            return;
+          }
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
   } catch(_){}
-  setInterval(killAds, 800);
+  // Sparse paranoid sweep — every 5s is enough since the obfuscated loader
+  // is stripped server-side and MutationObserver covers any leftover dynamic ads.
+  setInterval(killAds, 5000);
 
   try { console.log('[ad-killer] armed'); } catch(_){}
 })();
@@ -457,13 +630,14 @@ export default {
         const r = await fetch(upstream, { cf: { cacheTtl: 300, cacheEverything: true } });
         if (!r.ok) return new Response('game not found: ' + id, { status: r.status });
         let text = await r.text();
+        text = stripMirrorJunk(text);
         text = text.replace(/<head([^>]*)>/i, `<head$1>${SITELOCK_BUSTER}${AD_KILLER}`);
         return new Response(text, {
           status: 200,
           headers: {
             'content-type': 'text/html; charset=utf-8',
             'access-control-allow-origin': '*',
-            'cache-control': 'public, max-age=300',
+            'cache-control': 'public, max-age=60',
           },
         });
       } catch (e) {
