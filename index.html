@@ -6,6 +6,20 @@
   <title>Poki Cheat Hub — Console snippets & bookmarklets for Poki games</title>
   <meta name="description" content="One-click cheats for Poki games. Skip ads, infinite coins, god mode. Console snippets and bookmarklets generated client-side. No accounts." />
 
+  <script>
+    // Cross-origin redirect — cheats rely on iframe being same-origin with
+    // the parent page. If hosted anywhere other than poki-proxy.workers.dev
+    // (e.g. GitHub Pages, file://, mirror domain), redirect to the CF worker
+    // origin so the cheat-menu can inject into the game frame.
+    (function(){
+      var h = location.hostname;
+      var skipRedirect = location.search.indexOf('noredirect') > -1;
+      if (!skipRedirect && !/\.workers\.dev$/i.test(h) && h !== 'localhost' && h !== '127.0.0.1') {
+        location.replace('https://poki-proxy.reviewtart.workers.dev/' + location.search + location.hash);
+      }
+    })();
+  </script>
+
   <link rel="preconnect" href="https://rsms.me/" />
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
   <link rel="stylesheet" href="css/style.css" />

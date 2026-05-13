@@ -33,6 +33,10 @@ const state = {
   currentSlug: null,
 };
 
+// Default Cloudflare proxy worker — required when site is served from
+// GitHub Pages, file://, or any other origin without the proxy logic.
+const DEFAULT_PROXY = 'https://poki-proxy.reviewtart.workers.dev';
+
 // Read optional proxy from query string: ?proxy=https://poki-proxy.workers.dev
 function readProxy() {
   const u = new URL(location.href);
@@ -46,7 +50,10 @@ function readProxy() {
     state.proxyBase = location.origin;
     return state.proxyBase;
   }
-  return null;
+  // Anywhere else (GitHub Pages, file://, custom domain) — use the default
+  // Cloudflare proxy so library-mirror + Poki-game proxying still works.
+  state.proxyBase = DEFAULT_PROXY;
+  return state.proxyBase;
 }
 
 function gameUrlFor(slug) {
