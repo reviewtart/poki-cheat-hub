@@ -277,26 +277,25 @@ function menuBootFn(gameName) {
     clearTimeout(toastShow._t);
     toastShow._t = setTimeout(() => toast.classList.remove('show'), 1500);
   }
+  // Speed cheat — scales the timestamp passed to every requestAnimationFrame
+  // callback. RAF chain stays linear (no exponential freeze on speed-up, no
+  // dead loop on slow-down), and delta-time physics scales naturally.
   function patchRaf(mul, label) {
-    if (window.__pch_origRaf) cancelRafPatch();
-    window.__pch_origRaf = window.requestAnimationFrame;
-    if (mul === 1) { window.requestAnimationFrame = window.__pch_origRaf; toastShow(label); return; }
-    // Speed up: call cb multiple times per frame; Slow: skip frames
-    if (mul > 1) {
-      window.requestAnimationFrame = (cb) => {
-        const real = window.__pch_origRaf;
-        for (let i = 1; i < mul; i++) real.call(window, cb);
-        return real.call(window, cb);
-      };
-    } else {
-      let counter = 0;
-      const skip = Math.round(1 / mul);
-      window.requestAnimationFrame = (cb) => window.__pch_origRaf.call(window, (t) => { if (++counter % skip === 0) cb(t); });
+    if (!window.__pch_raf_installed) {
+      const orig = window.requestAnimationFrame.bind(window);
+      window.__pch_raf_orig = orig;
+      window.__pch_raf_scale = 1;
+      let base = null, virt = 0, lastReal = 0;
+      window.requestAnimationFrame = (cb) => orig((t) => {
+        if (base === null) { base = t; lastReal = t; }
+        virt += (t - lastReal) * window.__pch_raf_scale;
+        lastReal = t;
+        try { cb(base + virt); } catch(e) { console.warn('[pch] RAF cb err', e); }
+      });
+      window.__pch_raf_installed = true;
     }
+    window.__pch_raf_scale = mul;
     toastShow(label);
-  }
-  function cancelRafPatch() {
-    if (window.__pch_origRaf) window.requestAnimationFrame = window.__pch_origRaf;
   }
   function bumpFields(names, delta) {
     let n = 0;
